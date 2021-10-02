@@ -102,7 +102,6 @@ async def check_price():
 		timestamp = datetime.now()
 		time = timestamp.strftime(r"%I:%M %p")
 		
-		cryptoChannel = client.get_channel(defaultChannel)
 		hdr = {'User-Agent': 'Mozilla/5.0'} # browser header
 
 		cursor.execute("SELECT * FROM coins")
@@ -149,13 +148,19 @@ async def check_price():
 				fetchPercent = fetchPercent.text
 				fetchPercent = fetchPercent.replace('\n', '').replace('\r', '')
 				fetchPercent = "(" + fetchPercent + ")"
-
+			fetchPriceAlt = round(float(fetchPrice[1:]) * 50, 2) # Average PHP price
 			if coinsCount <= 1:
 				result = "[" + time + "] "
-			result = result + emoji + " " + name + ": " + fetchPrice + " " + fetchPercent + " "
+			result = result + emoji + " " + name + ": " + fetchPrice + " / ₱" + str(fetchPriceAlt) + " " + fetchPercent + " "
 		
 		print(result)
-		await cryptoChannel.edit(topic=result)
+		db = sqlite3.connect('channels.db')
+		cursor = db.cursor()
+		cursor.execute("SELECT * FROM channels")
+		for row in cursor:
+			getChannel = int(row[1])
+			cryptoChannel = client.get_channel(getChannel)
+			await cryptoChannel.edit(topic=result)
 
 		await asyncio.sleep(waitTime) # task loop wait time
 
@@ -196,37 +201,61 @@ async def add(ctx, coin = None, url = None, emoji = None):
 	channel = ctx.channel # current channel
 
 	if coin is None or url is None:
-		await channel.send('Error: Coin name and URL is required. Format: $add <COIN> <URL>')
+		embedTitle = 'Error: Coin name and URL is required.'
+		embed=discord.Embed(
+			title=embedTitle,
+			description="Format: $add <COIN> <URL>",
+			color=discord.Color.red())
+		embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+		await channel.send(embed=embed)
 	else:
 		db = sqlite3.connect('coins.db')
 		cursor = db.cursor()
 		cursor.execute("SELECT * FROM coins WHERE Name = '" + coin + "'")
-		cursor.fetchall()
-		rowCount = cursor.rowcount
+		rows = cursor.fetchall()
+		rowCount = len(rows)
 		if rowCount > 0:
-			await channel.send('Error: ' + coin + ' is already being fetched.')
+			embedTitle = 'Error: ' + coin + ' is already being fetched.'
+			embed=discord.Embed(
+				title=embedTitle,
+				description="Format: $add <COIN> <URL>",
+				color=discord.Color.red())
+			embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+			await channel.send(embed=embed)
 		else:
 			dateAdded = datetime.today().strftime("%Y-%m-%d %I:%M %p")
-			cursor.execute("INSERT INTO coins (Name, Emoji, URL, DateAdded) VALUES (%s, %s, %s, %s)", (coin, emoji, url, dateAdded))
+			cursor.execute("INSERT INTO coins (Name, Emoji, URL, DateAdded) VALUES (?, ?, ?, ?)", (coin, emoji, url, dateAdded))
 			db.commit()
-			await channel.send('Success: ' + coin + ' has been added to the fetch list.')
+			embedTitle = 'Success: ' + coin + ' has been added to the fetch list.'
+			embed=discord.Embed(
+				title=embedTitle,
+				description="Format: $add <COIN> <URL>",
+				color=discord.Color.green())
+			embed.set_thumbnail(url="https://toppng.com/uploads/preview/check-mark-png-11553192910q4npemdiib.png")
+			await channel.send(embed=embed)
 
 @client.command(pass_context=True)
 async def update(ctx, coin = None, newUrl = None, newEmoji = None):
 	channel = ctx.channel # current channel
 
 	if coin is None:
-		await channel.send('Error: Coin name is required. Format: $update <COIN> <URL>')
+		embedTitle = 'Error: Coin name is required.'
+		embed=discord.Embed(
+			title=embedTitle,
+			description="Format: $update <COIN> <URL>",
+			color=discord.Color.red())
+		embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+		await channel.send(embed=embed)
 	else:
 		db = sqlite3.connect('coins.db')
 		cursor = db.cursor()
 		cursor.execute("SELECT * FROM coins WHERE Name = '" + coin + "'")
-		cursor.fetchall()
-		rowCount = cursor.rowcount
+		rows = cursor.fetchall()
+		rowCount = len(rows)
 		if rowCount > 0:
 			url = ""
 			emoji = ""
-			for row in cursor:
+			for row in rows:
 				url = row[3]
 				emoji = row[2]
 			if newUrl is not None:
@@ -235,14 +264,205 @@ async def update(ctx, coin = None, newUrl = None, newEmoji = None):
 				emoji = newEmoji
 
 			if (url == newUrl and emoji == newEmoji):
-				await channel.send('Nothing was changed. Format: $update <COIN> <URL>')
+				embedTitle = 'Nothing was changed.'
+				embed=discord.Embed(
+					title=embedTitle,
+					description="Format: $update <COIN> <URL>",
+					color=discord.Color.yellow())
+				embed.set_thumbnail(url="https://mpng.subpng.com/20190808/bp/kisspng-warning-sign-5d4c128bd24591.0527908715652665718613.jpg")
+				await channel.send(embed=embed)
 			else:
 				dateUpdated = datetime.today().strftime("%Y-%m-%d %I:%M %p")
-				cursor.execute("UPDATE coins SET Emoji = %s, URL = %s, DateUpdated = %s WHERE Name = %s", (emoji, url, dateUpdated, coin))
+				cursor.execute("UPDATE coins SET Emoji = ?, URL = ?, DateUpdated = ? WHERE Name = ?", (emoji, url, dateUpdated, coin))
 				db.commit()
-				await channel.send('Success: ' + coin + ' has been updated.')
+				embedTitle = 'Success: ' + coin + ' has been updated.'
+				embed=discord.Embed(
+					title=embedTitle,
+					description="Format: $update <COIN> <URL>",
+					color=discord.Color.green())
+				embed.set_thumbnail(url="https://toppng.com/uploads/preview/check-mark-png-11553192910q4npemdiib.png")
+				await channel.send(embed=embed)
 		else:
-			await channel.send('Error: ' + coin + ' is not being fetched.')
+			embedTitle = 'Error: ' + coin + ' is not in the list. $list to view all coins.'
+			embed=discord.Embed(
+				title=embedTitle,
+				color=discord.Color.red())
+			embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+			await channel.send(embed=embed)
+
+@client.command(pass_context=True)
+async def remove(ctx, coin = None):
+	channel = ctx.channel # current channel
+
+	if coin is None:
+		embedTitle = 'Error: Coin name is required.'
+		embed=discord.Embed(
+			title=embedTitle,
+			description="Format: $remove <COIN>",
+			color=discord.Color.red())
+		embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+		await channel.send(embed=embed)
+	else:
+		db = sqlite3.connect('coins.db')
+		cursor = db.cursor()
+		cursor.execute("SELECT * FROM coins WHERE Name = '" + coin + "'")
+		rows = cursor.fetchall()
+		rowCount = len(rows)
+		if rowCount > 0:
+			cursor.execute("DELETE FROM coins WHERE Name = '" + coin + "'")
+			db.commit()
+			embedTitle = 'Success: ' + coin + ' has been removed from the list.'
+			embed=discord.Embed(
+				title=embedTitle,
+				description="Format: $remove <COIN>",
+				color=discord.Color.green())
+			embed.set_thumbnail(url="https://toppng.com/uploads/preview/check-mark-png-11553192910q4npemdiib.png")
+			await channel.send(embed=embed)
+		else:
+			embedTitle = 'Error: ' + coin + ' is not in the list. $list to view all coins.'
+			embed=discord.Embed(
+				title=embedTitle,
+				description="Format: $remove <COIN>",
+				color=discord.Color.red())
+			embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+			await channel.send(embed=embed)
+
+@client.command(pass_context=True)
+async def list(ctx):
+	channel = ctx.channel # current channel
+
+	db = sqlite3.connect('coins.db')
+	cursor = db.cursor()
+	cursor.execute("SELECT * FROM coins")
+	rows = cursor.fetchall()
+	rowCount = len(rows)
+	if rowCount > 0:
+		embedTitle = "Coin List (" + str(rowCount) + ")" 
+		embed=discord.Embed(
+			title=embedTitle,
+			color=discord.Color.orange())
+		embed.set_thumbnail(url="https://i.kym-cdn.com/photos/images/newsfeed/001/475/112/f36.jpg")
+		for row in rows:
+			coinName = "#" + row[0] + " " + row[1]
+			coinURL = row[3]
+			embed.add_field(name=coinName, value=coinURL, inline=False)
+		await channel.send(embed=embed)
+	else:
+		await channel.send('No coins to fetch. List new coins with $add <COIN> <URL>')
+
+@client.command(pass_context=True)
+async def listchannels(ctx):
+	channel = ctx.channel # current channel
+
+	db = sqlite3.connect('channels.db')
+	cursor = db.cursor()
+	cursor.execute("SELECT * FROM channels")
+	rows = cursor.fetchall()
+	rowCount = len(rows)
+	if rowCount > 0:
+		embedTitle = "Channels List (" + str(rowCount) + ")" 
+		embed=discord.Embed(
+			title=embedTitle,
+			color=discord.Color.orange())
+		embed.set_thumbnail(url="https://i.kym-cdn.com/photos/images/newsfeed/001/475/112/f36.jpg")
+		for row in rows:
+			coinChannel = "#" + str(row[0]) + " " + row[1]
+			date = "Added in: " + row[2]
+			embed.add_field(name=coinChannel, value=date, inline=False)
+		await channel.send(embed=embed)
+	else:
+		await channel.send('No channels found.')
+
+@client.command(pass_context=True)
+async def addchannel(ctx, coinChannel = None):
+	channel = ctx.channel # current channel
+
+	if channel is None:
+		embedTitle = 'Error: Channel ID is required (Right-click the channel with Dev mode enabled -> Copy ID).'
+		embed=discord.Embed(
+			title=embedTitle,
+			description="Format: $addchannel <CHANNEL ID>",
+			color=discord.Color.red())
+		embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+		await channel.send(embed=embed)
+	else:
+		db = sqlite3.connect('channels.db')
+		cursor = db.cursor()
+		cursor.execute("SELECT * FROM channels WHERE Channel = '" + coinChannel + "'")
+		rows = cursor.fetchall()
+		rowCount = len(rows)
+		if rowCount > 0:
+			embedTitle = 'Error: ' + coinChannel + ' is already listed.'
+			embed=discord.Embed(
+				title=embedTitle,
+				description="Format: $addchannel <CHANNEL ID>",
+				color=discord.Color.red())
+			embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+			await channel.send(embed=embed)
+		else:
+			dateAdded = datetime.today().strftime("%Y-%m-%d %I:%M %p")
+			cursor.execute("INSERT INTO channels (Channel, DateAdded) VALUES (?, ?)", (coinChannel, dateAdded))
+			db.commit()
+			embedTitle = 'Success: ' + coinChannel + ' has been added.'
+			embed=discord.Embed(
+				title=embedTitle,
+				description="Format: $addchannel <CHANNEL ID>",
+				color=discord.Color.green())
+			embed.set_thumbnail(url="https://toppng.com/uploads/preview/check-mark-png-11553192910q4npemdiib.png")
+			await channel.send(embed=embed)
+
+@client.command(pass_context=True)
+async def removechannel(ctx, coinChannel = None):
+	channel = ctx.channel # current channel
+
+	if coin is None:
+		embedTitle = 'Error: Channel ID is required (Right-click the channel with Dev mode enabled -> Copy ID).'
+		embed=discord.Embed(
+			title=embedTitle,
+			description="Format: $removechannel <CHANNEL ID>",
+			color=discord.Color.red())
+		embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+		await channel.send(embed=embed)
+	else:
+		db = sqlite3.connect('channels.db')
+		cursor = db.cursor()
+		cursor.execute("SELECT * FROM channels WHERE Channel = '" + coinChannel + "'")
+		rows = cursor.fetchall()
+		rowCount = len(rows)
+		if rowCount > 0:
+			cursor.execute("DELETE FROM channels WHERE Channel = '" + coinChannel + "'")
+			db.commit()
+			embedTitle = 'Success: ' + coin + ' has been removed from the list.'
+			embed=discord.Embed(
+				title=embedTitle,
+				description="Format: $removechannel <CHANNEL ID>",
+				color=discord.Color.green())
+			embed.set_thumbnail(url="https://toppng.com/uploads/preview/check-mark-png-11553192910q4npemdiib.png")
+			await channel.send(embed=embed)
+		else:
+			embedTitle = 'Error: ' + coinChannel + ' is not in the list. $listchannel to view all channels.'
+			embed=discord.Embed(
+				title=embedTitle,
+				description="Format: $removechannel <CHANNEL ID>",
+				color=discord.Color.red())
+			embed.set_thumbnail(url="https://image.pngaaa.com/946/28946-middle.png")
+			await channel.send(embed=embed)
+
+# @client.command(pass_context=True)
+# async def help(ctx):
+# 	channel = ctx.channel # current channel
+
+# 	embedTitle = "Commands List" 
+# 	embed=discord.Embed(
+# 		title=embedTitle,
+# 		description="Format: $<COMMAND>",
+# 		color=discord.Color.orange())
+# 	embed.set_thumbnail(url="https://i.kym-cdn.com/photos/images/newsfeed/001/475/112/f36.jpg")
+# 	embed.add_field(name="$list", value="List of all coins that are being fetched.", inline=False)
+# 	embed.add_field(name="$add <COIN> <URL>", value="Adds a new coin to the list.", inline=False)
+# 	embed.add_field(name="$update <COIN> <URL>", value="Updates the coin with new details.", inline=False)
+# 	embed.add_field(name="$remove <COIN>", value="Removes the specified coin.", inline=False)
+# 	await channel.send(embed=embed)
 
 # ------------------------------------------------
 # EXECUTE
