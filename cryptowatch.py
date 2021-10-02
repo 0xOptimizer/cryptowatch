@@ -4,9 +4,11 @@ import asyncio
 from datetime import datetime
 from urllib.request import urlopen as uReq, Request
 from bs4 import BeautifulSoup as soup
-import mysql.connector
+import sqlite3
 import os
 from dotenv import load_dotenv
+import requests, json
+import math
 
 # ------------------------------------------------
 # CONFIGS
@@ -15,20 +17,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-defaultChannel = os.getenv("DEFAULT_CHANNEL") # current-interest
+defaultChannel = int(os.getenv("DEFAULT_CHANNEL")) # current-interest
 ACTIVITY_STATUS = os.getenv("ACTIVITY_STATUS")
 ACTIVITY_TYPE = os.getenv("ACTIVITY_TYPE")
 ACTIVITY_TEXT = os.getenv("ACTIVITY_TEXT")
-DATABASE_HOST = os.getenv("DATABASE_HOST")
-DATABASE_USERNAME = os.getenv("DATABASE_USERNAME")
-DATABASE_PASSWORD = os.getenv("DATABASE_PASSWORD")
-DATABASE_DBNAME = os.getenv("DATABASE_DBNAME")
+# DATABASE_HOST = os.getenv("DATABASE_HOST")
+# DATABASE_USERNAME = os.getenv("DATABASE_USERNAME")
+# DATABASE_PASSWORD = os.getenv("DATABASE_PASSWORD")
+# DATABASE_DBNAME = os.getenv("DATABASE_DBNAME")
 
 print("[" + datetime.now().strftime(r"%I:%M:%S %p") + "] " + "[1/3] Assigning SCV for launch...")
 print("[" + datetime.now().strftime(r"%I:%M:%S %p") + "] " + "Loaded configs:")
 print("[" + datetime.now().strftime(r"%I:%M:%S %p") + "] " + "Activity status: " + ACTIVITY_STATUS)
 print("[" + datetime.now().strftime(r"%I:%M:%S %p") + "] " + "Activity type: " + ACTIVITY_TYPE)
 print("[" + datetime.now().strftime(r"%I:%M:%S %p") + "] " + "Activity text: " + ACTIVITY_TEXT)
+print("[" + datetime.now().strftime(r"%I:%M:%S %p") + "] " + "Channel: " + str(defaultChannel))
 
 # ------------------------------------------------
 # INITIALIZATION
@@ -74,6 +77,8 @@ print("[" + datetime.now().strftime(r"%I:%M:%S %p") + "] " + "[2/3] Initializing
 
 waitTime = 305 # 5 minutes 5 seconds (rate limit is 2 requests per 10 minutes)
 counter = 0
+gasCounter = 0
+gasWaitTime = 15
 
 # ------------------------------------------------
 # EVENTS SECTION
@@ -90,13 +95,8 @@ async def check_price():
 		await client.wait_until_ready()
 		counter += 1
 
-		db = mysql.connector.connect(
-			host=DATABASE_HOST,
-			user=DATABASE_USERNAME,
-			password=DATABASE_PASSWORD,
-			database=DATABASE_DBNAME,
-		)
-		cursor = db.cursor(buffered=True)
+		db = sqlite3.connect('coins.db')
+		cursor = db.cursor()
 
 		print("[" + datetime.now().strftime(r"%I:%M:%S %p") + "] " + "[" + str(counter) + "] Updating data")
 		timestamp = datetime.now()
@@ -159,6 +159,34 @@ async def check_price():
 
 		await asyncio.sleep(waitTime) # task loop wait time
 
+async def check_gas():
+	global gasCounter
+	global defaultChannel
+	while not client.is_closed():
+		gasCounter += 1
+
+		
+		timestamp = datetime.now()
+		time = timestamp.strftime(r"%I:%M %p")
+
+		content = requests.get("https://www.gasnow.org/api/v3/gas/price?utm_source=OptiBot")
+		gas = json.loads(content.content)
+		rapid = int(gas["data"]["rapid"] / math.pow(10, 9))
+		fast = int(gas["data"]["fast"] / math.pow(10, 9))
+		standard = int(gas["data"]["standard"] / math.pow(10, 9))
+		slow = int(gas["data"]["slow"] / math.pow(10, 9))
+
+		print("[" + datetime.now().strftime(r"%I:%M:%S %p") + "] " + "[" + str(gasCounter) + "] Reading gas prices: RAPID = " + str(rapid) + " | FAST = " + str(fast) + " | STANDARD = " + str(standard) + " | SLOW = " + str(slow))
+
+		if slow <= 35:
+			await client.wait_until_ready()
+			channel = client.get_channel(868876393252020244)
+			await channel.send("Gas price for SLOW reached " + str(slow) + " gwei | RAPID = " + str(rapid) + " | FAST = " + str(fast) + " | STANDARD = " + str(standard) + " | SLOW = " + str(slow))
+
+		# await cryptoChannel.edit(topic=result)
+
+		await asyncio.sleep(gasWaitTime) # task loop wait time
+
 # ------------------------------------------------
 # COMMANDS
 # ------------------------------------------------
@@ -170,13 +198,8 @@ async def add(ctx, coin = None, url = None, emoji = None):
 	if coin is None or url is None:
 		await channel.send('Error: Coin name and URL is required. Format: $add <COIN> <URL>')
 	else:
-		db = mysql.connector.connect(
-			host=DATABASE_HOST,
-			user=DATABASE_USERNAME,
-			password=DATABASE_PASSWORD,
-			database=DATABASE_DBNAME,
-		)
-		cursor = db.cursor(buffered=True)
+		db = sqlite3.connect('coins.db')
+		cursor = db.cursor()
 		cursor.execute("SELECT * FROM coins WHERE Name = '" + coin + "'")
 		cursor.fetchall()
 		rowCount = cursor.rowcount
@@ -195,13 +218,8 @@ async def update(ctx, coin = None, newUrl = None, newEmoji = None):
 	if coin is None:
 		await channel.send('Error: Coin name is required. Format: $update <COIN> <URL>')
 	else:
-		db = mysql.connector.connect(
-			host=DATABASE_HOST,
-			user=DATABASE_USERNAME,
-			password=DATABASE_PASSWORD,
-			database=DATABASE_DBNAME,
-		)
-		cursor = db.cursor(buffered=True)
+		db = sqlite3.connect('coins.db')
+		cursor = db.cursor()
 		cursor.execute("SELECT * FROM coins WHERE Name = '" + coin + "'")
 		cursor.fetchall()
 		rowCount = cursor.rowcount
@@ -230,5 +248,6 @@ async def update(ctx, coin = None, newUrl = None, newEmoji = None):
 # EXECUTE
 # ------------------------------------------------
 
-client.loop.create_task(check_price())	
+client.loop.create_task(check_price())
+# client.loop.create_task(check_gas())	
 client.run(TOKEN)
